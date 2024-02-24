@@ -5,19 +5,16 @@
 # Dependencies: ps, vmstat, iostat
 # ASCII art provided by: https://asciiart.cc/view/12760
 
-# Checks for --help argument or root privileges before proceeding
-if [ "$#" -eq 1 ]; then
-    if [ "$1" == "--help" ]; then
-        # Help Section Here
-        exit 0
-    fi
-elif [ "$(id -u)" -ne 0 ]; then
-    echo "This script requires root privileges. Please run as root or use sudo." >&2
-    exit 1
-fi
+main() {
+    parse_arguments "$@"
+    check_root_privileges
+    display_ascii_art
+    display_intro
+    handle_user_interaction
+}
 
-# ASCII Art and Script Introduction
-cat << "EOF"
+display_ascii_art() {
+    cat << "EOF"
                         .-.
           .-._    _.../   `,    _.-.
           |   `'-'    \     \_'`   |
@@ -32,85 +29,104 @@ cat << "EOF"
   aac       '-._              _.-'          
                 `""--....--""`
 EOF
-
-echo "Process Kitty"
-echo "-------------------------------------"
-
-# Prompt for system type, ensuring all necessary tools, and the rest of your functions here...
-
-# Prompts the user to select their Unix system type or to exit the script
-prompt_for_system_type() {
-    local confirm_exit
-    echo "Please identify your Unix system type:"
-    echo "1. Debian/Ubuntu (Linux)"
-    echo "2. CentOS/RHEL (Linux)"
-    echo "3. Fedora (Linux)"
-    echo "4. Other Unix-like systems"
-    echo "5. Exit"
-    read -p "Enter the number of your system type (or 5 to exit): " system_type_choice
-
-    case $system_type_choice in
-        1) SYSTEM_TYPE="Debian/Ubuntu";;
-        2) SYSTEM_TYPE="CentOS/RHEL";;
-        3) SYSTEM_TYPE="Fedora";;
-        4) SYSTEM_TYPE="Other";;
-        5) 
-            read -p "Are you sure you want to exit? (y/N): " confirm_exit
-            if [[ $confirm_exit =~ ^[Yy]$ ]]; then
-                echo "Exiting script."
-                exit 0
-            else
-                echo "Returning to main menu..."
-                return
-            fi
-            ;;
-        *) echo "Invalid selection. Exiting." >&2; exit 1;;
-    esac
 }
 
-# A check for / Installation of missing tool function based on User selection of system type
+display_intro() {
+    printf "Process Kitty\n"
+    printf "-------------------------------------\n"
+}
+
+parse_arguments() {
+    while getopts ":hm:tp:" opt; do
+        case ${opt} in
+            h ) show_advanced_help; exit 0 ;;
+            m ) memory_limit="$OPTARG" ;;
+            t ) track_parentage=true ;;
+            p ) specific_pid="$OPTARG" ;;
+            \? ) printf "Invalid Option: -$OPTARG" 1>&2; exit 1 ;;
+        esac
+    done
+}
+
+show_advanced_help() {
+    cat << EOF
+Process Kitty - Advanced Help Section
+
+Usage:
+  ./script.sh [options]
+
+Options:
+  --help, -h                          Show basic help message and exit.
+  -m <memory_limit_in_KB>, --memory   Filter processes by memory usage (in KB).
+  -t, --track                         Track process parentage.
+  -p <PID>, --pid                     Specify a PID for detailed analysis.
+  --list-all                          List all processes.
+  --filter-by-user <username>         Filter processes by the specified user.
+  --filter-by-state <state>           Filter processes by their state (e.g., running, sleeping).
+
+Examples:
+  ./script.sh -m 1024                 List processes exceeding 1024 KB of memory usage.
+  ./script.sh --track -p 1234         Track the parentage of process with PID 1234.
+  ./script.sh --list-all              List all processes on the system.
+  ./script.sh --filter-by-user root   List processes owned by the root user.
+  ./script.sh --filter-by-state R     List processes in the running state.
+
+Note: Some options might require root privileges to execute properly.
+
+EOF
+}
+
+check_root_privileges() {
+    if [ "$(id -u)" -ne 0 ]; then
+        printf "This script requires root privileges. Please run as root.\n" >&2
+        exit 1
+    fi
+}
+
+handle_user_interaction() {
+    while true; do
+        echo  "-------------------------------------"
+        echo  "Process Accounting Management Script"
+        echo  "-------------------------------------"
+        echo  "0. Exit"
+        echo  "1. Ensure all required tools are installed"
+        echo  "2. View System-wide Metrics"
+        echo  "3. Compare Two Processes by Attribute"
+        echo  "4. List Processes Exceeding Memory Usage"
+        echo  "5. Track Process Parentage"
+        echo  "6. List All Processes"
+        echo  "-------------------------------------"
+        read -p "Please choose an option: " main_choice
+
+        case $main_choice in
+            0) echo "Exiting..."; exit 0 ;;
+            1) ensure_tools_installed ;;
+            2) view_system_metrics ;;
+            3) compare_two_processes ;;
+            4) 
+                read -p "Enter memory usage limit in K: " memory_limit
+                list_processes_filtered_by_memory "$memory_limit"
+                ;;
+            5) 
+                read -p "Enter PID to track parentage: " pid
+                track_process_parentage "$pid"
+                ;;
+            6) list_all_processes ;;
+            *) echo "Invalid option. Please choose again.\n" >&2 ;;
+        esac
+        echo "Press Enter to return to the menu ..."
+        read
+    done
+}
+
 ensure_tools_installed() {
-    # Define necessary tools and their install commands for each system type
-    declare -A tools=( ["accton"]="psacct/acct" ["vmstat"]="procps or procps-ng" ["iostat"]="sysstat" )
-
-    for tool in "${!tools[@]}"; do
-        if ! command -v $tool >/dev/null 2>&1; then
-            echo "$tool is not available. It is usually part of the '${tools[$tool]}' package."
-
-            # Install missing tool based on system type
-            case $SYSTEM_TYPE in
-                "Debian/Ubuntu")
-                    echo "Attempting to install $tool for Debian/Ubuntu."
-                    sudo apt-get update
-                    case $tool in
-                        "accton") sudo apt-get install -y acct ;;
-                        "vmstat"|"iostat") sudo apt-get install -y procps sysstat ;;
-                    esac
-                    ;;
-                "CentOS/RHEL"|"Fedora")
-                    local pkg_manager="yum"
-                    [[ $SYSTEM_TYPE == "Fedora" ]] && pkg_manager="dnf"
-                    echo "Attempting to install $tool for CentOS/RHEL/Fedora using $pkg_manager."
-                    case $tool in
-                        "accton") sudo $pkg_manager install -y psacct ;;
-                        "vmstat"|"iostat") sudo $pkg_manager install -y procps-ng sysstat ;;
-                    esac
-                    ;;
-                "Other")
-                    echo "Manual installation required for $tool on this system type. Please install the '${tools[$tool]}' package."
-                    return 1
-                    ;;
-                *)
-                    echo "Unsupported system type for $tool installation."
-                    return 1
-                    ;;
-            esac
-        else
-            echo "$tool is already available."
+    local tools=("ps" "vmstat" "iostat")
+    for tool in "${tools[@]}"; do
+        if ! command -v $tool &> /dev/null; then
+            printf "$tool is required but not installed. Please install it before running this script.\n" >&2
+            exit 1
         fi
     done
-
-    echo "All necessary tools are checked and installed."
 }
 
 # A user display for key metric system with inclusion of tools including, free, vmstat, iostat, etc. this makes it easier to choose which process the user may want to view for comparison from menu options.
@@ -142,14 +158,6 @@ view_system_metrics() {
     fi
 }
 
-list_processes() {
-    # This function lists the first 20 running processes with their PID and command.
-    echo "Currently running processes and their PIDs:"
-    if ! ps -e -o pid,cmd | head -n 20; then
-        echo "Failed to list processes." >&2
-        exit 1
-    fi
-}
 
 
 compare_two_processes() {
@@ -214,29 +222,27 @@ compare_two_processes() {
     fi
 }
 
+# Example implementation of list_processes_filtered_by_memory
+list_processes_filtered_by_memory() {
+    if [ -n "$memory_limit" ]; then
+        echo "Listing processes exceeding $memory_limit KB of memory usage:"
+        ps -eo pid,vsz,comm | awk -v limit=$memory_limit '$2 > limit {print}'
+    fi
+}
 
-# Main function/menu...
-prompt_for_system_type
-ensure_tools_installed
+track_process_parentage() {
+    local pid=$1
+    echo "Tracking parentage for PID: $pid"
+    while [ $pid -ne 0 ]; do
+        echo "PID: $pid"
+        pid=$(ps -o ppid= -p $pid)
+    done
+}
 
-while true; do
-    echo "-------------------------------------"
-    echo "Process Accounting Management Script"
-    echo "-------------------------------------"
-    echo "1. Ensure all required tools are installed"
-    echo "2. View System-wide Metrics"
-    echo "3. Compare Two Processes by Attribute"
-    echo "4. Exit"
-    echo "-------------------------------------"
-    read -p "Please choose an option: " main_choice
 
-    case $main_choice in
-        1) ensure_tools_installed ;;
-        2) view_system_metrics ;;
-        3) compare_two_processes ;;
-        4) echo "Exiting..."; exit 0 ;;
-        *) echo "Invalid option. Please choose again." >&2 ;;
-    esac
-    echo "Press Enter to return to the menu ..."
-    read
-done
+
+list_all_processes() {
+    ps aux
+}
+
+main "$@"
